@@ -11,6 +11,7 @@ $LIBPATH = ["#{HERE}/lib"]
 $CFLAGS = "#{$includes} #{$libraries} #{$CFLAGS}"
 $LDFLAGS = "#{$libraries} #{$LDFLAGS}"
 $CXXFLAGS = ' -fPIC -pthread'
+PATCH_FILES = ["config.guess", "config.sub"]
 
 if RUBY_PLATFORM =~ /darwin/
   brew_prefix = `brew --prefix`.chomp
@@ -25,6 +26,11 @@ Dir.chdir(HERE) do
 
     puts(cmd = "tar xzf #{BUNDLE} 2>&1")
     raise "'#{cmd}' failed" unless system(cmd)
+
+    PATCH_FILES.each do |patch_file|
+      puts(cmd = "cp -f #{patch_file} #{BUNDLE_PATH}/ 2>&1")
+      raise "'#{cmd}' failed" unless system(cmd)
+    end
 
     Dir.chdir(BUNDLE_PATH) do
       puts(cmd = "env CXXFLAGS='#{$CXXFLAGS}' CFLAGS='#{$CFLAGS}' LDFLAGS='#{$LDFLAGS}' ./configure --prefix=#{HERE} --disable-audio-hash --disable-video-hash --disable-shared 2>&1")
