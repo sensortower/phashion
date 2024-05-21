@@ -4,9 +4,10 @@ HERE = File.expand_path(File.dirname(__FILE__))
 BUNDLE = Dir.glob("#{HERE}/pHash-*.tar.gz").first
 BUNDLE_PATH = BUNDLE.gsub(".tar.gz", "")
 $CFLAGS = " -x c++ -fPIC #{ENV["CFLAGS"]}"
+$CFLAGS += " -fdeclspec" if RUBY_PLATFORM =~ /darwin/
 $includes = " -I#{HERE}/include"
 $libraries = " -L#{HERE}/lib -L/usr/local/lib"
-$libraries += " -L/opt/homebrew/lib" if RUBY_PLATFORM =~ /darwin/
+$libraries += "-L/opt/homebrew/lib" if RUBY_PLATFORM =~ /darwin/
 $LIBPATH = ["#{HERE}/lib"]
 $CFLAGS = "#{$includes} #{$libraries} #{$CFLAGS}"
 $LDFLAGS = "#{$libraries} #{$LDFLAGS}"
@@ -41,7 +42,7 @@ Dir.chdir(HERE) do
     system("cp -f libpHash.a libpHash_gem.a")
     system("cp -f libpHash.la libpHash_gem.la")
   end
-  $LIBS = " -lpthread -lpHash_gem -lstdc++ -ljpeg -lpng"
+  $LIBS = " -lpthread -lpHash_gem -lstdc++ -ljpeg -lpng -lm"
   $LIBS += " -lmvec" if have_library("mvec")
 end
 
