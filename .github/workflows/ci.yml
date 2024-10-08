@@ -29,9 +29,12 @@ jobs:
         run: bundle install
       - name: Compile
         run: bundle exec rake compile
-      - name: Post-Compile
+      - name: Post-Compile (Failure)
         if: failure()
         run: cat ext/phashion_ext/mkmf.log
+      - name: Post-Compile (Success)
+        if: success()
+        run: bundle exec rake native gem
       - name: Run tests
         run: bundle exec rake
       - name: Archive production artifacts
