@@ -8,7 +8,7 @@ $CFLAGS += " -fdeclspec" if RUBY_PLATFORM =~ /darwin/
 $includes = " -I#{HERE}/include"
 $libraries = " -L#{HERE}/lib -L/usr/local/lib"
 $LIBPATH = ["#{HERE}/lib"]
-$CFLAGS = " #{$includes} #{$libraries} #{$CFLAGS}"
+$CFLAGS = "#{$includes} #{$libraries} #{$CFLAGS}"
 $LDFLAGS = "#{$libraries} #{$LDFLAGS}"
 $CXXFLAGS = ' -fPIC -pthread'
 
