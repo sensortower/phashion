@@ -2,9 +2,6 @@ require 'helper'
 require 'sqlite3'
 require 'tempfile'
 
-# rubocop:disable Metrics/ClassLength
-# rubocop:disable Metrics/AbcSize
-# rubocop:disable Metrics/MethodLength
 class TestPhashion < Minitest::Test
   def test_text_hash
     matches = Tempfile.open('foo') do |f|
@@ -246,6 +243,3 @@ class TestPhashion < Minitest::Test
     assert Phashion.duplicate?(a.fingerprint, b.fingerprint), "#{a.filename} not dupe of #{b.filename}"
   end
 end
-# rubocop:enable Metrics/ClassLength
-# rubocop:enable Metrics/AbcSize
-# rubocop:enable Metrics/MethodLength
