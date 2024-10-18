@@ -36,7 +36,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get install -y libpng-dev libjpeg-dev libsqlite3-dev
       - name: Install dev dependencies (macOS)
-        if: matrix.os == 'macos-14'
+        if: startsWith(matrix.os, 'macos-')
         run: brew install libpng jpeg sqlite3 imagemagick
       - name: Install dependencies
         run: bundle install
