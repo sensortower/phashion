@@ -34,6 +34,8 @@ jobs:
         run: uname -r
       - name: Print ruby platform
         run: ruby -e 'puts RUBY_PLATFORM'
+      - name: Print rubygems env
+        run: gem env
       - name: Install dev dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get install -y libpng-dev libjpeg-dev libsqlite3-dev
