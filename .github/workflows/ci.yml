@@ -11,19 +11,12 @@ jobs:
       matrix:
         os:
           - 'ubuntu-latest'
-          - 'macos-13'
           - 'macos-14'
-          - 'macos-15'
         include:
           - os: ubuntu-latest
             arch: 'x86_64-linux'
-          - os: macos-13
-            arch: 'arm64-darwin-22'
           - os: macos-14
             arch: 'arm64-darwin-23'
-          - os: macos-15
-            arch: 'arm64-darwin-24'
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v3
       - name: Set up Ruby 3.1
@@ -46,14 +39,13 @@ jobs:
         run: bundle install
       - name: Compile
         run: bundle exec rake compile
-      - name: Post-Compile (Failure)
-        if: failure()
-        run: cat ext/phashion_ext/mkmf.log
-      - name: Post-Compile (Success)
-        if: success()
-        run: bundle exec rake native gem
       - name: Run tests
         run: bundle exec rake
+      - name: Build native gem (rake-compiler)
+        run: bundle exec rake native gem
+      - name: Build native gem (gem build)
+        if: startsWith(matrix.arch, 'arm64-darwin')
+        run: gem build pkg/arm64-darwin-*/*.gemspec -o pkg/arm64-darwin.gem --platform arm64-darwin
       - name: Step
         run: echo "SHORT_SHA=`echo ${GITHUB_SHA} | cut -c1-8`" >> $GITHUB_ENV
       - name: Archive production artifacts
