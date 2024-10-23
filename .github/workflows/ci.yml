@@ -45,7 +45,7 @@ jobs:
         run: bundle exec rake native gem
       - name: Build native gem (gem build)
         if: startsWith(matrix.arch, 'arm64-darwin')
-        run: gem build pkg/arm64-darwin-*/*.gemspec -o pkg/arm64-darwin.gem --platform arm64-darwin
+        run: gem build pkg/phashion-*-arm64-darwin-*/*.gemspec -o pkg/arm64-darwin.gem --platform arm64-darwin
       - name: Step
         run: echo "SHORT_SHA=`echo ${GITHUB_SHA} | cut -c1-8`" >> $GITHUB_ENV
       - name: Archive production artifacts
