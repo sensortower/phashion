@@ -12,11 +12,14 @@ jobs:
         os:
           - 'ubuntu-latest'
           - 'macos-14'
+          - 'aarch64'
         include:
           - os: ubuntu-latest
             arch: 'x86_64-linux'
           - os: macos-14
             arch: 'arm64-darwin-23'
+          - os: aarch64
+            arch: 'aarch64-linux'
     steps:
       - uses: actions/checkout@v3
       - name: Set up Ruby 3.1
@@ -46,6 +49,9 @@ jobs:
       - name: Build native gem (gem build)
         if: startsWith(matrix.arch, 'arm64-darwin')
         run: gem build pkg/phashion-*-arm64-darwin-*/*.gemspec -o pkg/arm64-darwin.gem --platform arm64-darwin
+      - name: Build native gem (gem build) for aarch64
+        if: startsWith(matrix.arch, 'aarch64')
+        run: gem build pkg/phashion-*-aarch64-linux-*/*.gemspec -o pkg/aarch64-linux.gem --platform aarch64-linux
       - name: Step
         run: echo "SHORT_SHA=`echo ${GITHUB_SHA} | cut -c1-8`" >> $GITHUB_ENV
       - name: Archive production artifacts
