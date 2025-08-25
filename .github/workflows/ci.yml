@@ -31,7 +31,7 @@ jobs:
         run: gem env
       - name: Install dev dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install -y libpng-dev libjpeg-dev libsqlite3-dev
+        run: sudo apt-get install -y libpng-dev libjpeg-dev libsqlite3-dev imagemagick graphicsmagick
       - name: Install dev dependencies (macOS)
         if: startsWith(matrix.os, 'macos-')
         run: brew install libpng jpeg sqlite3 imagemagick
