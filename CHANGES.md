@@ -5,6 +5,7 @@ Master Branch
 -----
 * Add dupe check passing two fingerprints (issue #50)
 
+Random change
 1.2.0
 -----
 * Added TravisCI testing support (issue #49)
