@@ -34,7 +34,7 @@ jobs:
         run: sudo apt-get install -y libpng-dev libjpeg-dev libsqlite3-dev imagemagick graphicsmagick
       - name: Install dev dependencies (macOS)
         if: startsWith(matrix.os, 'macos-')
-        run: brew install libpng jpeg sqlite3 imagemagick
+        run: brew install libpng jpeg sqlite3 imagemagick@6
       - name: Install dependencies
         run: bundle install
       - name: Compile
