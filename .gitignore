@@ -28,4 +28,6 @@ ext/phashion_ext
 !ext/phashion_ext/extconf.rb
 !ext/phashion_ext/phashion_ext.c
 !ext/phashion_ext/pHash-0.9.6.tar.gz
+!ext/phashion_ext/config.guess
+!ext/phashion_ext/config.sub
 lib/phashion_ext.bundle
