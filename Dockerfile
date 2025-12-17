@@ -48,7 +48,6 @@ WORKDIR /app
 # Copy the built gem from builder stage
 COPY --from=builder /build/pkg/*.gem .
 
-#RUN gem install --local /app/$(ruby -e 'puts "#{Gem::Platform.local.cpu}-#{Gem::Platform.local.os}-#{Gem::Platform.local.version}"').gem
 RUN PLATFORM=$(ruby -e 'puts "#{Gem::Platform.local.cpu}-#{Gem::Platform.local.os}-#{Gem::Platform.local.version}"') && \
     GEMFILE=$(find . -name "*$PLATFORM.gem") && \
     gem install --local $GEMFILE
