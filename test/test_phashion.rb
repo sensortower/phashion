@@ -225,6 +225,46 @@ class TestPhashion < Minitest::Test
     assert_duplicate_with_module_method(jpg, jpg_x)
   end
 
+  ### phash256 tests
+  def test_fingerprint256_returns_integer
+    jpg = Phashion::Image.new(relative_path('/jpg/Broccoli_Super_Food.jpg'))
+    assert_kind_of Integer, jpg.fingerprint256
+    assert_operator jpg.fingerprint256, :>, 0
+    assert_operator jpg.fingerprint256.bit_length, :<=, 256
+  end
+
+  def test_fingerprint256_same_image_equals
+    jpg  = Phashion::Image.new(relative_path('/jpg/Broccoli_Super_Food.jpg'))
+    png  = Phashion::Image.new(relative_path('/png/Broccoli_Super_Food.png'))
+    assert_equal 0, jpg.distance256_from(png)
+  end
+
+  def test_fingerprint256_different_images_differ
+    jpg  = Phashion::Image.new(relative_path('/jpg/Broccoli_Super_Food.jpg'))
+    png2 = Phashion::Image.new(relative_path('/png/linux.png'))
+    assert_operator jpg.distance256_from(png2), :>, 0
+  end
+
+  def test_fingerprint256_class_method
+    jpg = relative_path('/jpg/Broccoli_Super_Food.jpg')
+    png = relative_path('/png/Broccoli_Super_Food.png')
+    h1  = Phashion.image_hash256_for(jpg)
+    h2  = Phashion.image_hash256_for(png)
+    assert_equal 0, Phashion.hamming_distance256(h1, h2)
+  end
+
+  def test_fingerprint256_color_correction_small_distance
+    jpg   = Phashion::Image.new(relative_path('/jpg/Broccoli_Super_Food.jpg'))
+    jpg_x = Phashion::Image.new(relative_path('/jpg/Broccoli_Super_Food.color-corrected.jpg'))
+    assert_operator jpg.distance256_from(jpg_x), :<=, 20
+  end
+
+  def test_fingerprint256_very_different_image_large_distance
+    jpg  = Phashion::Image.new(relative_path('/jpg/Broccoli_Super_Food.jpg'))
+    oth  = Phashion::Image.new(relative_path('/jpg/avatar.jpg'))
+    assert_operator jpg.distance256_from(oth), :>, 20
+  end
+
   private
 
   def relative_path(path)

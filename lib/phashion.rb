@@ -43,6 +43,14 @@ module Phashion
       @hash ||= Phashion.image_hash_for(@filename)
     end
 
+    def fingerprint256
+      @hash256 ||= Phashion.image_hash256_for(@filename)
+    end
+
+    def distance256_from(other)
+      Phashion.hamming_distance256(fingerprint256, other.fingerprint256)
+    end
+
     def mh_fingerprint
       @mh_hash ||= Phashion.mh_hash_for(@filename)
     end
