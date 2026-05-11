@@ -201,18 +201,81 @@ static VALUE textmatches_for(VALUE self, VALUE list1, VALUE list2) {
  *   5. Compare each coefficient to the median → 256-bit hash
  */
 
-#define PHASH256_SIZE     16
-#define PHASH256_IMG_SIZE (PHASH256_SIZE * 4)          /* 64  */
-#define PHASH256_BITS     (PHASH256_SIZE * PHASH256_SIZE) /* 256 */
-#define PHASH256_BYTES    (PHASH256_BITS / 8)          /* 32  */
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
-/* Lanczos-3 kernel matching Pillow's filter_lanczos (support = 3.0) */
+#define PHASH256_SIZE     16
+#define PHASH256_IMG_SIZE (PHASH256_SIZE * 4)            /* 64  */
+#define PHASH256_BITS     (PHASH256_SIZE * PHASH256_SIZE) /* 256 */
+#define PHASH256_BYTES    (PHASH256_BITS / 8)            /* 32  */
+
+#define LANCZOS_SUPPORT_RADIUS 3.0
+
+/* ITU-R BT.601 luma coefficients for RGB → grayscale conversion */
+#define LUMA_R 0.2126
+#define LUMA_G 0.7152
+#define LUMA_B 0.0722
+
+/* Maximum image dimension we're willing to process (guards against overflow) */
+#define MAX_IMAGE_DIMENSION 65536
+
 static double lanczos3_kernel(double x) {
     if (x == 0.0) return 1.0;
     if (x < 0.0) x = -x;
-    if (x >= 3.0) return 0.0;
+    if (x >= LANCZOS_SUPPORT_RADIUS) return 0.0;
     double xpi = x * M_PI;
-    return 3.0 * sin(xpi) * sin(xpi / 3.0) / (xpi * xpi);
+    return LANCZOS_SUPPORT_RADIUS * sin(xpi) * sin(xpi / LANCZOS_SUPPORT_RADIUS) / (xpi * xpi);
+}
+
+/*
+ * Perform one separable 1D Lanczos-3 pass (either horizontal or vertical).
+ *
+ * Parameters:
+ *   input       - source pixel buffer
+ *   output      - destination pixel buffer
+ *   src_len     - source dimension along the resampling axis
+ *   dst_len     - destination dimension along the resampling axis
+ *   other_len   - dimension along the non-resampling axis
+ *   src_stride  - distance between consecutive elements along the resampling axis in input
+ *   dst_stride  - distance between consecutive elements along the resampling axis in output
+ *   src_row     - distance between consecutive rows (the non-resampling axis) in input
+ *   dst_row     - distance between consecutive rows (the non-resampling axis) in output
+ *   clamp_output - if true, clamp and round output values to [0, 255]
+ */
+static void lanczos_pass(const double *input, double *output,
+                          int src_len, int dst_len, int other_len,
+                          int src_stride, int dst_stride,
+                          int src_row, int dst_row,
+                          int clamp_output) {
+    double scale = (double)src_len / dst_len;
+    double norm  = scale > 1.0 ? scale : 1.0;
+    double support = LANCZOS_SUPPORT_RADIUS * norm;
+
+    for (int row = 0; row < other_len; row++) {
+        for (int d = 0; d < dst_len; d++) {
+            double center = (d + 0.5) * scale - 0.5;
+            int s0 = (int)ceil(center - support);
+            int s1 = (int)floor(center + support);
+            if (s0 < 0) s0 = 0;
+            if (s1 >= src_len) s1 = src_len - 1;
+
+            double weight_sum = 0.0, value = 0.0;
+            for (int s = s0; s <= s1; s++) {
+                double weight = lanczos3_kernel((s - center) / norm);
+                value      += input[row * src_row + s * src_stride] * weight;
+                weight_sum += weight;
+            }
+
+            double result = (weight_sum > 0.0) ? (value / weight_sum) : 0.0;
+            if (clamp_output) {
+                if (result < 0.0) result = 0.0;
+                else if (result > 255.0) result = 255.0;
+                result = round(result);
+            }
+            output[row * dst_row + d * dst_stride] = result;
+        }
+    }
 }
 
 /*
@@ -225,58 +288,32 @@ static double lanczos3_kernel(double x) {
  * 3-pixel support and misses this anti-aliasing, causing near-identical
  * images to get different hashes.
  *
- * Two separable 1D passes (horizontal then vertical). Output pixels are
- * clamped and rounded to [0, 255] to match PIL's uint8 storage.
+ * Two separable 1D passes (horizontal then vertical). Final output pixels
+ * are clamped and rounded to [0, 255] to match PIL's uint8 storage.
+ *
+ * Returns 0 on success, -1 on allocation failure.
  */
-static void lanczos_resize_pil(const float *src, int sw, int sh,
-                                float *dst,       int dw, int dh) {
-    double scale_x = (double)sw / dw;
-    double scale_y = (double)sh / dh;
-    double norm_x  = scale_x > 1.0 ? scale_x : 1.0;
-    double norm_y  = scale_y > 1.0 ? scale_y : 1.0;
-    double supp_x  = 3.0 * norm_x;
-    double supp_y  = 3.0 * norm_y;
+static int lanczos_resize_pil(const double *src, int src_width, int src_height,
+                               double *dst,      int dst_width, int dst_height) {
+    double *tmp = (double *)malloc((size_t)dst_width * src_height * sizeof(double));
+    if (!tmp) return -1;
 
-    /* Horizontal pass: sw×sh → dw×sh */
-    float *tmp = (float *)malloc((size_t)dw * sh * sizeof(float));
-    for (int y = 0; y < sh; y++) {
-        for (int x = 0; x < dw; x++) {
-            double center = (x + 0.5) * scale_x - 0.5;
-            int x0 = (int)ceil(center - supp_x);
-            int x1 = (int)floor(center + supp_x);
-            if (x0 < 0)   x0 = 0;
-            if (x1 >= sw) x1 = sw - 1;
-            double wsum = 0.0, val = 0.0;
-            for (int sx = x0; sx <= x1; sx++) {
-                double w = lanczos3_kernel((sx - center) / norm_x);
-                val  += src[y * sw + sx] * w;
-                wsum += w;
-            }
-            tmp[y * dw + x] = (wsum > 0.0) ? (float)(val / wsum) : 0.0f;
-        }
-    }
+    /* Horizontal pass: src_width×src_height → dst_width×src_height */
+    lanczos_pass(src, tmp,
+                 src_width, dst_width, src_height,
+                 1, 1,                        /* stride along resampling axis */
+                 src_width, dst_width,        /* row stride */
+                 0);                          /* no clamping on intermediate */
 
-    /* Vertical pass: dw×sh → dw×dh, clamp+round to uint8 */
-    for (int y = 0; y < dh; y++) {
-        for (int x = 0; x < dw; x++) {
-            double center = (y + 0.5) * scale_y - 0.5;
-            int y0 = (int)ceil(center - supp_y);
-            int y1 = (int)floor(center + supp_y);
-            if (y0 < 0)   y0 = 0;
-            if (y1 >= sh) y1 = sh - 1;
-            double wsum = 0.0, val = 0.0;
-            for (int sy = y0; sy <= y1; sy++) {
-                double w = lanczos3_kernel((sy - center) / norm_y);
-                val  += tmp[sy * dw + x] * w;
-                wsum += w;
-            }
-            float v = (wsum > 0.0) ? (float)(val / wsum) : 0.0f;
-            if (v < 0.0f)   v = 0.0f;
-            if (v > 255.0f) v = 255.0f;
-            dst[y * dw + x] = roundf(v);
-        }
-    }
+    /* Vertical pass: dst_width×src_height → dst_width×dst_height, with clamping */
+    lanczos_pass(tmp, dst,
+                 src_height, dst_height, dst_width,
+                 dst_width, dst_width,        /* stride along vertical axis */
+                 1, 1,                        /* "row" stride = element stride */
+                 1);                          /* clamp final output */
+
     free(tmp);
+    return 0;
 }
 
 static void dct1d(double *data, int n) {
@@ -285,8 +322,8 @@ static void dct1d(double *data, int n) {
     for (int k = 0; k < n; k++) {
         double sum = 0.0;
         for (int i = 0; i < n; i++)
-            sum += data[i] * cos(pi_2n * k * (2*i + 1));
-        tmp[k] = 2.0 * sum;
+            sum += data[i] * cos(pi_2n * k * (2 * i + 1));
+        tmp[k] = sum + sum;
     }
     memcpy(data, tmp, (size_t)n * sizeof(double));
 }
@@ -317,54 +354,81 @@ static void *nogvl_hash256(struct nogvl_hash256_args *args) {
     try {
         CImg<float> src(args->filename);
 
-        /* 1. Grayscale (ITU-R 601), matching PIL's convert("L") → uint8 */
-        int sw = src.width(), sh = src.height();
-        float *gray_flat = (float *)malloc((size_t)sw * sh * sizeof(float));
+        int src_width  = src.width();
+        int src_height = src.height();
+
+        if (src_width <= 0 || src_height <= 0 ||
+            src_width > MAX_IMAGE_DIMENSION || src_height > MAX_IMAGE_DIMENSION) {
+            args->retval = -1;
+            return NULL;
+        }
+
+        /* Guard against size_t overflow: width * height * sizeof(double) */
+        size_t pixel_count = (size_t)src_width * (size_t)src_height;
+        if (pixel_count / (size_t)src_width != (size_t)src_height) {
+            args->retval = -1;
+            return NULL;
+        }
+
+        /* 1. Grayscale (ITU-R BT.601 luma), matching PIL's convert("L") → uint8 */
+        double *gray_flat = (double *)malloc(pixel_count * sizeof(double));
+        if (!gray_flat) {
+            args->retval = -1;
+            return NULL;
+        }
+
         if (src.spectrum() >= 3) {
             cimg_forXY(src, x, y) {
-                float v = 0.299f * src(x, y, 0, 0)
-                        + 0.587f * src(x, y, 0, 1)
-                        + 0.114f * src(x, y, 0, 2);
-                if (v < 0.0f) v = 0.0f;
-                else if (v > 255.0f) v = 255.0f;
-                gray_flat[y * sw + x] = std::round(v);
+                double v = LUMA_R * (double)src(x, y, 0, 0)
+                         + LUMA_G * (double)src(x, y, 0, 1)
+                         + LUMA_B * (double)src(x, y, 0, 2);
+                if (v < 0.0) v = 0.0;
+                else if (v > 255.0) v = 255.0;
+                gray_flat[y * src_width + x] = round(v);
             }
         } else {
-            cimg_forXY(src, x, y)
-                gray_flat[y * sw + x] = src(x, y, 0, 0);
+            cimg_forXY(src, x, y) {
+                double v = (double)src(x, y, 0, 0);
+                if (v < 0.0) v = 0.0;
+                else if (v > 255.0) v = 255.0;
+                gray_flat[y * src_width + x] = round(v);
+            }
         }
 
         /* 2. Resize 64×64 with PIL-compatible anti-aliased Lanczos */
-        float resized[PHASH256_IMG_SIZE * PHASH256_IMG_SIZE];
-        lanczos_resize_pil(gray_flat, sw, sh,
-                           resized, PHASH256_IMG_SIZE, PHASH256_IMG_SIZE);
+        double resized[PHASH256_IMG_SIZE * PHASH256_IMG_SIZE];
+        if (lanczos_resize_pil(gray_flat, src_width, src_height,
+                               resized, PHASH256_IMG_SIZE, PHASH256_IMG_SIZE) != 0) {
+            free(gray_flat);
+            args->retval = -1;
+            return NULL;
+        }
         free(gray_flat);
 
-        /* 3. Pixels → row-major double array */
-        double pixels[PHASH256_IMG_SIZE * PHASH256_IMG_SIZE];
-        for (int i = 0; i < PHASH256_IMG_SIZE * PHASH256_IMG_SIZE; i++)
-            pixels[i] = (double)resized[i];
+        /* 3. 2D DCT-II (matches scipy.fftpack.dct type=2 norm=None) */
+        dct2d(resized, PHASH256_IMG_SIZE);
 
-        /* 4. 2D DCT-II (matches scipy.fftpack.dct type=2 norm=None, axis=0 then axis=1) */
-        dct2d(pixels, PHASH256_IMG_SIZE);
-
-        /* 5. Top-left 16×16 submatrix */
+        /* 4. Top-left 16×16 submatrix */
         double low[PHASH256_BITS];
         for (int r = 0; r < PHASH256_SIZE; r++)
             for (int c = 0; c < PHASH256_SIZE; c++)
-                low[r * PHASH256_SIZE + c] = pixels[r * PHASH256_IMG_SIZE + c];
+                low[r * PHASH256_SIZE + c] = resized[r * PHASH256_IMG_SIZE + c];
 
-        /* 6. Median of 256 values (average of two middle elements) */
+        /* 5. Median of 256 values (average of two middle elements) */
         double sorted[PHASH256_BITS];
         memcpy(sorted, low, sizeof(sorted));
         qsort(sorted, PHASH256_BITS, sizeof(double), cmp_double);
-        double med = (sorted[PHASH256_BITS/2 - 1] + sorted[PHASH256_BITS/2]) / 2.0;
+        double med = (sorted[PHASH256_BITS / 2 - 1] + sorted[PHASH256_BITS / 2]) / 2.0;
 
-        /* 7. Pack bits MSB-first: bit i set iff low[i] > median */
-        memset(args->bytes, 0, PHASH256_BYTES);
-        for (int i = 0; i < PHASH256_BITS; i++)
-            if (low[i] > med)
-                args->bytes[i / 8] |= (uint8_t)(1u << (7 - (i % 8)));
+        /* 6. Pack bits MSB-first: bit i set iff low[i] > median */
+        for (int i = 0; i < PHASH256_BYTES; i++) {
+            uint8_t byte_val = 0;
+            for (int bit = 0; bit < 8; bit++) {
+                if (low[i * 8 + bit] > med)
+                    byte_val |= (uint8_t)(1u << (7 - bit));
+            }
+            args->bytes[i] = byte_val;
+        }
 
         args->retval = 0;
     } catch (...) {

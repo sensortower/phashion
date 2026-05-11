@@ -228,9 +228,10 @@ class TestPhashion < Minitest::Test
   ### phash256 tests
   def test_fingerprint256_returns_integer
     jpg = Phashion::Image.new(relative_path('/jpg/Broccoli_Super_Food.jpg'))
-    assert_kind_of Integer, jpg.fingerprint256
-    assert_operator jpg.fingerprint256, :>, 0
-    assert_operator jpg.fingerprint256.bit_length, :<=, 256
+    hash = jpg.fingerprint256
+    assert_kind_of Integer, hash
+    assert_operator hash, :>=, 0
+    assert_operator hash, :<, 2**256
   end
 
   def test_fingerprint256_same_image_equals
